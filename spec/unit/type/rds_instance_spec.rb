@@ -35,6 +35,7 @@ describe type_class do
       :db_parameter_group,
       :backup_retention_period,
       :db_subnet,
+      :restore_snapshot,
     ]
   end
 
@@ -59,7 +60,7 @@ describe type_class do
   it 'region should not contain spaces' do
     expect {
       type_class.new(:name => 'sample', :region => 'sa east 1')
-    }.to raise_error(Puppet::ResourceError, /region should not contain spaces/)
+    }.to raise_error(Puppet::ResourceError, /region should be a valid AWS region/)
   end
 
   it 'IOPS must be an integer' do
@@ -91,6 +92,7 @@ describe type_class do
     'master_user_password',
     :db_parameter_group,
     'final_db_snapshot_identifier',
+    'restore_snapshot',
   ].each do |property|
     it "should require #{property} to be a string" do
       expect(type_class).to require_string_for(property)

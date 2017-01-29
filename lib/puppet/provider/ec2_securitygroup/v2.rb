@@ -91,7 +91,7 @@ Puppet::Type.type(:ec2_securitygroup).provide(:v2, :parent => PuppetX::Puppetlab
   end
 
   def exists?
-    Puppet.info("Checking if security group #{name} exists in region #{target_region}")
+    Puppet.debug("Checking if security group #{name} exists in region #{target_region}")
     @property_hash[:ensure] == :present
   end
 
@@ -148,7 +148,7 @@ Puppet::Type.type(:ec2_securitygroup).provide(:v2, :parent => PuppetX::Puppetlab
         ip_protocol: protocol,
       }
       permission[:to_port] = protocol == 'icmp' ? -1 : to_port.to_i
-      permission[:from_port] = protocol == 'icmp' ? -1 : from_port.to_i
+      permission[:from_port] = from_port.to_i
       if rule.key? 'security_group'
         source_group_name = rule['security_group']
 
@@ -164,22 +164,25 @@ Puppet::Type.type(:ec2_securitygroup).provide(:v2, :parent => PuppetX::Puppetlab
 
         group_response = ec2.describe_security_groups(filters: filters)
         match_count = group_response.data.security_groups.count
-        msg = "No groups found called #{source_group_name}"
-        msg = msg + " in #{@property_hash[:vpc]}"
-        fail(msg) if match_count == 0
-        source_group_id = group_response.data.security_groups.first.group_id
-        Puppet.warning "#{match_count} groups found called #{source_group_name}, using #{source_group_id}" if match_count > 1
+        if match_count == 0
+          Puppet.warning("No groups found called #{source_group_name} in #{@property_hash[:vpc]}; skipping rule")
+        else
+          source_group_id = group_response.data.security_groups.first.group_id
+          Puppet.warning "#{match_count} groups found called #{source_group_name}, using #{source_group_id}" if match_count > 1
 
-        permission[:user_id_group_pairs] = [{
-          group_id: source_group_id
-        }]
+          permission[:user_id_group_pairs] = [{
+            group_id: source_group_id
+          }]
+        end
       elsif rule.key? 'cidr'
         permission[:ip_ranges] = [{cidr_ip: rule['cidr']}]
       end
-      rule_hash[:ip_permissions] << permission
+
+      # Skip the permission if it has no peer.
+      rule_hash[:ip_permissions] << permission unless (permission.keys & [:user_id_group_pairs, :ip_ranges]).empty?
     end
 
-    rule_hash
+    rule_hash[:ip_permissions].any? ? rule_hash : nil
   end
 
   def authorize_ingress(new_rules, existing_rules=[])
@@ -190,12 +193,14 @@ Puppet::Type.type(:ec2_securitygroup).provide(:v2, :parent => PuppetX::Puppetlab
     to_create = parser.rules_to_create(existing_rules)
     to_delete = parser.rules_to_delete(existing_rules)
 
-    to_delete.reject(&:nil?).each do |rule|
-      ec2.revoke_security_group_ingress(prepare_ingress_for_api(rule))
+    to_delete.compact.each do |rule|
+      prepared_rule = prepare_ingress_for_api(rule) and
+        ec2.revoke_security_group_ingress(prepared_rule)
     end
 
-    to_create.each do |rule|
-      ec2.authorize_security_group_ingress(prepare_ingress_for_api(rule))
+    to_create.compact.each do |rule|
+      prepared_rule = prepare_ingress_for_api(rule) and
+        ec2.authorize_security_group_ingress(prepared_rule)
     end
   end
 

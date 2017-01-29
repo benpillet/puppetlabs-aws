@@ -106,6 +106,7 @@ class AwsHelper
     @route53_client = ::Aws::Route53::Client.new({region: region})
     @rds_client = ::Aws::RDS::Client.new({region: region})
     @sqs_client = ::Aws::SQS::Client.new({region: region})
+    @iam_client = ::Aws::IAM::Client.new({region: region})
   end
 
 
@@ -273,6 +274,26 @@ class AwsHelper
     records.data.resource_record_sets.select { |r| r.type == type && r.name == name}
   end
 
+  def get_iam_users(name)
+    @iam_client.list_users.users.select { |user| user.user_name == name }
+  end
+
+  def get_iam_roles(name)
+    @iam_client.list_roles.roles.select { |role| role.role_name == name }
+  end
+
+  def get_iam_instance_profiles(name)
+    @iam_client.list_instance_profiles.instance_profiles.select { |instance_profile|
+      instance_profile.instance_profile_name == name
+    }
+  end
+
+  def get_iam_instance_profiles_for_role(name)
+    response = @iam_client.list_instance_profiles_for_role(
+        role_name: [name]
+    )
+    response.data.instance_profiles
+  end
 end
 
 class TestExecutor

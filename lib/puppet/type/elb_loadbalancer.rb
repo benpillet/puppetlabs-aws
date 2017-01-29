@@ -1,4 +1,5 @@
 require_relative '../../puppet_x/puppetlabs/property/tag.rb'
+require_relative '../../puppet_x/puppetlabs/property/region.rb'
 
 Puppet::Type.newtype(:elb_loadbalancer) do
   @doc = 'Type representing an ELB load balancer.'
@@ -13,23 +14,20 @@ Puppet::Type.newtype(:elb_loadbalancer) do
     end
   end
 
-  newproperty(:region) do
+  newproperty(:region, :parent => PuppetX::Property::AwsRegion) do
     desc 'The region in which to launch the load balancer.'
-    validate do |value|
-      fail 'region must not contain spaces' if value =~ /\s/
-      fail 'region should be a String' unless value.is_a?(String)
-    end
   end
 
   newproperty(:listeners, :array_matching => :all) do
     desc 'The ports and protocols the load balancer listens to.'
     def insync?(is)
-      normalise(is).to_set == normalise(should).to_set
-    end
-    def normalise(listeners)
-      listeners.collect do |obj|
+      one = provider.class.normalize_values(is).collect do |obj|
         obj.each { |k,v| obj[k] = v.to_s.downcase }
       end
+      two = provider.class.normalize_values(should).collect do |obj|
+        obj.each { |k,v| obj[k] = v.to_s.downcase }
+      end
+      one == two
     end
     validate do |value|
       value = [value] unless value.is_a?(Array)
@@ -38,6 +36,18 @@ Puppet::Type.newtype(:elb_loadbalancer) do
         ['protocol', 'load_balancer_port', 'instance_protocol', 'instance_port'].each do |key|
           fail "listeners must include #{key}" unless listener.keys.include?(key)
         end
+      end
+    end
+  end
+
+  newproperty(:health_check) do
+    desc 'The health check configuration for the load balancer'
+    def insync?(is)
+      provider.class.normalize_values(is) == provider.class.normalize_values(should)
+    end
+    validate do |value|
+      ['target', 'interval', 'timeout', 'unhealthy_threshold', 'healthy_threshold'].each do |key|
+        fail "health_check must include #{key}" unless value.keys.include?(key)
       end
     end
   end
@@ -90,6 +100,10 @@ Puppet::Type.newtype(:elb_loadbalancer) do
     def insync?(is)
       is.to_s == should.to_s
     end
+  end
+
+  newproperty(:dns_name) do
+    desc 'The DNS name of the load balancer'
   end
 
   validate do
